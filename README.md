@@ -1,40 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# movierex
 
-## Getting Started
+A movie recommendation web app with a chat-like onboarding interface built with Next.js, OpenAI's GPT API, and The Movie Database (TMDB) API.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- 🎬 Chat-like onboarding interface inspired by Buildspace's Sage
+- 🔍 Real-time movie search with TMDB API autocomplete
+- 🤖 AI-powered movie commentary using OpenAI's GPT
+- 🌙 Clean, minimal dark theme with Tailwind CSS
+- 📱 Responsive design
+
+## Setup
+
+1. **Clone and install dependencies:**
+
+   ```bash
+   npm install
+   ```
+
+2. **Set up environment variables:**
+
+   Create a `.env.local` file in the root directory:
+
+   ```env
+   # TMDB API Key
+   # Get your free API key at: https://www.themoviedb.org/settings/api
+   TMDB_API_KEY=your_tmdb_api_key_here
+
+   # OpenAI API Key
+   # Get your API key at: https://platform.openai.com/api-keys
+   OPENAI_API_KEY=your_openai_api_key_here
+   ```
+
+3. **Get your API keys:**
+
+   - **TMDB API:** Sign up at [TMDB](https://www.themoviedb.org/settings/api) and get your free API key
+   - **OpenAI API:** Get your API key from [OpenAI Platform](https://platform.openai.com/api-keys)
+
+4. **Run the development server:**
+
+   ```bash
+   npm run dev
+   ```
+
+5. **Open your browser:**
+   Navigate to [http://localhost:3000](http://localhost:3000)
+
+## How it works
+
+1. Users are greeted with a chat interface asking: "what movies have you recently watched that you liked?"
+2. As they type, the app fetches autocomplete suggestions from TMDB
+3. After selecting a movie, GPT provides a friendly comment about their choice
+4. The app then asks: "what did you like about this movie?"
+5. Users can continue adding more movies in this conversational flow
+
+## Tech Stack
+
+- **Framework:** Next.js 15 with Pages Router
+- **Styling:** Tailwind CSS v4
+- **Fonts:** Geist Sans
+- **APIs:**
+  - TMDB API for movie data
+  - OpenAI GPT-3.5-turbo for movie commentary
+- **HTTP Client:** Axios
+
+## Project Structure
+
+```
+src/
+├── components/
+│   └── MovieChat.js          # Main chat interface component
+├── pages/
+│   ├── api/
+│   │   ├── search-movies.js  # TMDB movie search endpoint
+│   │   └── movie-comment.js  # OpenAI movie commentary endpoint
+│   ├── index.js              # Homepage with chat interface
+│   └── ...
+└── styles/
+    └── globals.css           # Global styles with Tailwind
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Next Steps
 
-You can start editing the page by modifying `pages/index.js`. The page auto-updates as you edit the file.
+This is the initial UI/UX implementation. Future features will include:
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.js`.
-
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
-
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+- Complete onboarding flow for 3-5 movies
+- Movie recommendation algorithm
+- User preference analysis
+- Recommendation results page
