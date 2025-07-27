@@ -41,6 +41,49 @@ export default async function handler(req, res) {
     const movieInfo = movieYear
       ? `${movieTitle.trim()} (${movieYear})`
       : movieTitle.trim();
+    // Default negative and invalid flags
+    let isNegative = false;
+    let needsClarification = false;
+    // If user feedback, detect negative or invalid sentiment first and exit early to save tokens
+    if (type === "feedback_response" && userFeedback) {
+      try {
+        const sentimentCheck = await openai.chat.completions.create({
+          model: "gpt-4.1-nano",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are analyzing user feedback about a movie they supposedly liked. Respond with only ONE of the following: 'YES' if the feedback indicates the user disliked the movie or selected it by mistake, 'INVALID' if the feedback is gibberish or doesn't make sense as a description of what they liked, or 'NO' if the feedback is valid (positive or neutral). Examples: 'it was boring' = YES, 'I hate it' = YES, 'wrong movie' = YES, 'haven't seen it' = YES, 'asdf' = INVALID, 'ciufivu' = INVALID, 'great acting' = NO.",
+            },
+            {
+              role: "user",
+              content: `User feedback about ${movieInfo}: "${userFeedback}"`,
+            },
+          ],
+          max_tokens: 5,
+          temperature: 0.1,
+        });
+        const sentiment = sentimentCheck.choices[0]?.message?.content
+          ?.trim()
+          .toUpperCase();
+        isNegative = sentiment === "YES";
+        needsClarification = sentiment === "INVALID";
+      } catch (error) {
+        console.error("Error checking sentiment:", error);
+      }
+      // If invalid feedback, ask for clarification
+      if (needsClarification) {
+        return res
+          .status(200)
+          .json({ message: "", isNegative: false, needsClarification: true });
+      }
+      // If feedback is negative, skip GPT comment and prompt removal
+      if (isNegative) {
+        return res
+          .status(200)
+          .json({ message: "", isNegative: true, needsClarification: false });
+      }
+    }
 
     let systemPrompt = "";
     let userPrompt = "";
@@ -58,7 +101,7 @@ export default async function handler(req, res) {
     }
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-nano",
       messages: [
         {
           role: "system",
@@ -78,8 +121,8 @@ export default async function handler(req, res) {
       (type === "feedback_response"
         ? "totally get that!"
         : "great choice! that's a fantastic movie.");
-
-    res.status(200).json({ message });
+    // Return comment for positive feedback or selection, include flags
+    res.status(200).json({ message, isNegative, needsClarification: false });
   } catch (error) {
     console.error("OpenAI API error:", error);
 
