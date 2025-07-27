@@ -1,13 +1,41 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import axios from "axios";
 import Image from "next/image";
+// TMDB genre ID to name mapping
+const genreMap = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Science Fiction",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+};
 
 const MovieChat = () => {
   const [messages, setMessages] = useState([
     {
       id: 1,
       type: "bot",
-      text: "what movies have you recently watched that you liked?",
+      text: "yo i'm rex. here to recommend banger movies you'll actually love.",
+      timestamp: Date.now(),
+    },
+    {
+      id: 2,
+      type: "bot",
+      text: "sooo... what's a movie you watched recently and thought 'damn, that was good'?",
       timestamp: Date.now(),
     },
   ]);
@@ -16,11 +44,12 @@ const MovieChat = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [currentStep, setCurrentStep] = useState("movie_input"); // movie_input, movie_feedback, choice_buttons
+  const [currentStep, setCurrentStep] = useState("movie_input"); // movie_input, movie_feedback, choice_buttons, movie_removal_choice
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [movieCount, setMovieCount] = useState(0);
   const [userPreferences, setUserPreferences] = useState([]);
   const [maxMovies, setMaxMovies] = useState(3); // Can be 3 or 5
+  const [pendingFeedback, setPendingFeedback] = useState(""); // Store feedback when negative sentiment detected
 
   const inputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -63,34 +92,42 @@ const MovieChat = () => {
     };
   }, []);
 
-  const searchMovies = useCallback(async (query) => {
-    if (query.length < 2) {
-      setMovieSuggestions([]);
-      setShowSuggestions(false);
-      setIsSearching(false);
-      return;
-    }
+  const searchMovies = useCallback(
+    async (query) => {
+      if (query.length < 2) {
+        setMovieSuggestions([]);
+        setShowSuggestions(false);
+        setIsSearching(false);
+        return;
+      }
 
-    setIsSearching(true);
-    try {
-      const response = await axios.get(
-        `/api/search-movies?query=${encodeURIComponent(query)}`
-      );
-      // Sort by popularity (higher popularity first) and take top 5
-      const sortedResults =
-        response.data.results
-          ?.sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
-          ?.slice(0, 5) || [];
-      setMovieSuggestions(sortedResults);
-      setShowSuggestions(true);
-    } catch (error) {
-      console.error("Error searching movies:", error);
-      setMovieSuggestions([]);
-      setShowSuggestions(false);
-    } finally {
-      setIsSearching(false);
-    }
-  }, []);
+      setIsSearching(true);
+      try {
+        const response = await axios.get(
+          `/api/search-movies?query=${encodeURIComponent(query)}`
+        );
+        // Sort by popularity (higher popularity first) and take top 5
+        const sortedResults =
+          response.data.results
+            ?.sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+            ?.slice(0, 5) || [];
+        // Remove previously selected movies to avoid duplicates
+        const selectedIds = userPreferences.map((pref) => pref.movie.id);
+        const uniqueResults = sortedResults.filter(
+          (movie) => !selectedIds.includes(movie.id)
+        );
+        setMovieSuggestions(uniqueResults);
+        setShowSuggestions(true);
+      } catch (error) {
+        console.error("Error searching movies:", error);
+        setMovieSuggestions([]);
+        setShowSuggestions(false);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [userPreferences]
+  );
 
   const debouncedSearch = useCallback(
     (query) => {
@@ -117,7 +154,11 @@ const MovieChat = () => {
   };
 
   const selectMovie = async (movie) => {
-    setSelectedMovie(movie);
+    // Map genre IDs to names when user selects a movie and omit raw genre_ids
+    const { genre_ids, ...movieBase } = movie;
+    const genres = (genre_ids || []).map((id) => genreMap[id]).filter(Boolean);
+    const movieWithGenres = { ...movieBase, genres };
+    setSelectedMovie(movieWithGenres);
     setCurrentInput("");
     setShowSuggestions(false);
     setIsLoading(true);
@@ -139,6 +180,7 @@ const MovieChat = () => {
         movieYear: movie.release_date
           ? new Date(movie.release_date).getFullYear()
           : null,
+        overview: movie.overview,
         type: "movie_selected",
       });
 
@@ -161,7 +203,7 @@ const MovieChat = () => {
         };
         setMessages((prev) => [...prev, followUpMessage]);
         setCurrentStep("movie_feedback");
-      }, 1500);
+      }, 1000);
     } catch (error) {
       console.error("Error getting movie comment:", error);
       const errorMessage = {
@@ -179,46 +221,79 @@ const MovieChat = () => {
 
   const handleFeedbackSubmit = async (e) => {
     e.preventDefault();
-    if (!currentInput.trim()) return;
-
+    // Capture and clear user input immediately
+    const feedback = currentInput.trim();
+    if (!feedback) return;
+    setCurrentInput("");
     const userMessage = {
       id: Date.now(),
       type: "user",
-      text: currentInput,
+      text: feedback,
       timestamp: Date.now(),
     };
-
     setMessages((prev) => [...prev, userMessage]);
-
-    // Store user preference
-    const newPreference = {
-      movie: selectedMovie,
-      feedback: currentInput.trim(),
-    };
-    setUserPreferences((prev) => [...prev, newPreference]);
-    setMovieCount((prev) => prev + 1);
-
     setIsLoading(true);
 
     try {
-      // Get GPT response to user's feedback
+      // Use captured feedback for API and sentiment checks
       const response = await axios.post("/api/movie-comment", {
         movieTitle: selectedMovie.title,
-        userFeedback: currentInput.trim(),
+        userFeedback: feedback,
         type: "feedback_response",
       });
-
+      const { message, isNegative, needsClarification } = response.data;
+      // If feedback gibberish, ask user to clarify without advancing state
+      if (needsClarification) {
+        setTimeout(() => {
+          const clarifyMsg = {
+            id: Date.now() + 1,
+            type: "bot",
+            text: "sorry, i didn't get that could you tell me what you liked about this movie in a sentence?",
+            timestamp: Date.now(),
+          };
+          setMessages((prev) => [...prev, clarifyMsg]);
+          setCurrentStep("movie_feedback");
+          // stop loading once prompt appears
+          setIsLoading(false);
+        }, 1000);
+        return;
+      }
+      // If negative, the removal flow will run
+      if (isNegative) {
+        setTimeout(() => {
+          const removalMessage = {
+            id: Date.now() + 1,
+            type: "bot",
+            text: "seems like you didn't really enjoy this one or maybe selected it by mistake? want to remove it and pick a different movie?",
+            timestamp: Date.now(),
+          };
+          setMessages((prev) => [...prev, removalMessage]);
+          setCurrentStep("movie_removal_choice");
+          // stop loading once prompt appears
+          setIsLoading(false);
+        }, 1000);
+        return;
+      }
+      // Otherwise show GPT's casual reaction
       const botResponse = {
         id: Date.now() + 1,
         type: "bot",
-        text: response.data.message,
+        text: message,
         timestamp: Date.now(),
       };
-
       setMessages((prev) => [...prev, botResponse]);
 
-      // Check if we've collected enough movies
-      if (movieCount + 1 >= maxMovies) {
+      // Store user preference (only if not negative)
+      const newPreference = {
+        movie: selectedMovie,
+        feedback: feedback,
+      };
+      setUserPreferences((prev) => [...prev, newPreference]);
+      setMovieCount((prev) => prev + 1);
+
+      // Determine next prompt based on count
+      const count = movieCount + 1;
+      if (count >= maxMovies) {
         if (maxMovies === 5) {
           // After 5 movies, automatically show recommendations
           setTimeout(() => {
@@ -233,7 +308,7 @@ const MovieChat = () => {
               timestamp: Date.now(),
             };
             setMessages((prev) => [...prev, finalMessage]);
-          }, 1500);
+          }, 1000);
         } else {
           // After 3 movies, show choice buttons
           setTimeout(() => {
@@ -245,24 +320,44 @@ const MovieChat = () => {
             };
             setMessages((prev) => [...prev, choiceMessage]);
             setCurrentStep("choice_buttons");
-          }, 1500);
+          }, 1000);
         }
       } else {
+        // After first and second movie
+        let prompt;
+        if (count === 1) {
+          prompt =
+            "okay, i need 2 more movies to get a sense of your taste, then i can start recommending";
+        } else if (count === 2) {
+          prompt = "just give me one more movie and i'm good to go";
+        } else {
+          prompt =
+            "this is the last one. think hard for this one, no pressure tho";
+        }
         setTimeout(() => {
           const nextMovieMessage = {
             id: Date.now() + 2,
             type: "bot",
-            text: "nice! what's another movie you've enjoyed recently?",
+            text: prompt,
             timestamp: Date.now(),
           };
           setMessages((prev) => [...prev, nextMovieMessage]);
           setCurrentStep("movie_input");
-        }, 1500);
+        }, 1000);
       }
     } catch (error) {
       console.error("Error getting feedback response:", error);
-      // Fallback response
-      if (movieCount + 1 >= maxMovies) {
+      // Store preference even on error (fallback)
+      const newPreference = {
+        movie: selectedMovie,
+        feedback: feedback,
+      };
+      setUserPreferences((prev) => [...prev, newPreference]);
+      setMovieCount((prev) => prev + 1);
+
+      // Fallback follow-up on error
+      const count = movieCount + 1;
+      if (count >= maxMovies) {
         if (maxMovies === 5) {
           setTimeout(() => {
             console.log("Final user preferences:", [
@@ -290,11 +385,22 @@ const MovieChat = () => {
           }, 1000);
         }
       } else {
+        // Fallback prompts
+        let prompt;
+        if (count === 1) {
+          prompt =
+            "okay, i need 2 more movies to get a sense of your taste, then i can start recommending";
+        } else if (count === 2) {
+          prompt = "just give me one more movie and i'm good to go";
+        } else {
+          prompt =
+            "this is the last one. think hard for this one, no pressure tho";
+        }
         setTimeout(() => {
           const nextMovieMessage = {
             id: Date.now() + 1,
             type: "bot",
-            text: "nice! what's another movie you've enjoyed recently?",
+            text: prompt,
             timestamp: Date.now(),
           };
           setMessages((prev) => [...prev, nextMovieMessage]);
@@ -303,9 +409,76 @@ const MovieChat = () => {
       }
     }
 
-    setCurrentInput("");
-    setSelectedMovie(null);
+    // ensure loading stops
     setIsLoading(false);
+  };
+
+  const handleRemovalChoice = (choice) => {
+    if (choice === "remove") {
+      // Remove the movie and ask for another one
+      const confirmMessage = {
+        id: Date.now(),
+        type: "bot",
+        text: "no worries! let's pick a different one. what's another movie you really enjoyed?",
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, confirmMessage]);
+      setCurrentStep("movie_input");
+    } else {
+      // Keep the movie and continue
+      const newPreference = {
+        movie: selectedMovie,
+        feedback: pendingFeedback, // Use stored feedback instead of currentInput
+      };
+      setUserPreferences((prev) => [...prev, newPreference]);
+      setMovieCount((prev) => prev + 1);
+
+      // If this was the final movie slot, show recommendations instead of another prompt
+      const nextCount = userPreferences.length + 1;
+      if (nextCount >= maxMovies) {
+        // Trigger recommendations flow
+        handleChoice("recommendations");
+        setPendingFeedback("");
+        setSelectedMovie(null);
+        return;
+      }
+
+      // Continue with normal flow for non-final slots
+      const count = userPreferences.length + 1;
+      let prompt;
+      if (count === 1) {
+        prompt =
+          "okay, i need 2 more movies to get a sense of your taste, then i can start recommending";
+      } else if (count === 2) {
+        prompt = "just give me one more movie and i'm good to go";
+      } else if (count >= 3 && maxMovies === 3) {
+        const choiceMessage = {
+          id: Date.now(),
+          type: "bot",
+          text: "cool! want to add a few more movies or should i give you some recommendations?",
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, choiceMessage]);
+        setCurrentStep("choice_buttons");
+        setPendingFeedback(""); // Clear pending feedback
+        setSelectedMovie(null);
+        return;
+      } else {
+        prompt =
+          "this is the last one. think hard for this one, no pressure tho";
+      }
+
+      const nextMessage = {
+        id: Date.now(),
+        type: "bot",
+        text: prompt,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, nextMessage]);
+      setCurrentStep("movie_input");
+    }
+    setPendingFeedback(""); // Clear pending feedback
+    setSelectedMovie(null);
   };
 
   const handleChoice = (choice) => {
@@ -399,6 +572,24 @@ const MovieChat = () => {
           </div>
         )}
 
+        {/* Movie Removal Choice Buttons */}
+        {currentStep === "movie_removal_choice" && (
+          <div className="flex space-x-3">
+            <button
+              onClick={() => handleRemovalChoice("remove")}
+              className="flex-1 border border-[#1A1A1A] rounded-lg px-4 py-3 bg-black text-[#6A6A6A] hover:text-[#EFEFEF] hover:border-[#6A6A6A] transition-colors text-sm"
+            >
+              remove it
+            </button>
+            <button
+              onClick={() => handleRemovalChoice("keep")}
+              className="flex-1 border border-[#1A1A1A] rounded-lg px-4 py-3 bg-black text-[#6A6A6A] hover:text-[#EFEFEF] hover:border-[#6A6A6A] transition-colors text-sm"
+            >
+              keep it
+            </button>
+          </div>
+        )}
+
         {/* Movie Suggestions */}
         {showSuggestions && currentStep === "movie_input" && (
           <div
@@ -475,44 +666,45 @@ const MovieChat = () => {
         )}
 
         {/* Input Form */}
-        {currentStep !== "choice_buttons" && (
-          <form onSubmit={handleSubmit}>
-            <div className="border border-[#1A1A1A] rounded-lg px-4 py-3 bg-black flex items-center">
-              <input
-                ref={inputRef}
-                type="text"
-                value={currentInput}
-                onChange={handleInputChange}
-                placeholder="message rex..."
-                className="flex-1 bg-transparent border-none outline-none text-[#EFEFEF] placeholder-[#6A6A6A] text-base md:text-lg"
-                disabled={isLoading}
-              />
-              {currentStep === "movie_feedback" && currentInput.trim() && (
-                <button
-                  type="submit"
-                  className="text-[#6A6A6A] hover:text-[#EFEFEF] transition-colors text-lg ml-3 flex items-center"
+        {currentStep !== "choice_buttons" &&
+          currentStep !== "movie_removal_choice" && (
+            <form onSubmit={handleSubmit}>
+              <div className="border border-[#1A1A1A] rounded-lg px-4 py-3 bg-black flex items-center">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={currentInput}
+                  onChange={handleInputChange}
+                  placeholder="message rex..."
+                  className="flex-1 bg-transparent border-none outline-none text-[#EFEFEF] placeholder-[#6A6A6A] text-base md:text-lg"
                   disabled={isLoading}
-                  aria-label="send"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                />
+                {currentStep === "movie_feedback" && currentInput.trim() && (
+                  <button
+                    type="submit"
+                    className="text-[#6A6A6A] hover:text-[#EFEFEF] transition-colors text-lg ml-3 flex items-center"
+                    disabled={isLoading}
+                    aria-label="send"
                   >
-                    <path d="M5 12h14" />
-                    <path d="m12 5 7 7-7 7" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </form>
-        )}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 12h14" />
+                      <path d="m12 5 7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
       </div>
     </div>
   );

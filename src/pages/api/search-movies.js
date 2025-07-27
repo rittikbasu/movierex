@@ -1,5 +1,4 @@
 import axios from "axios";
-
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ message: "Method not allowed" });
@@ -41,15 +40,25 @@ export default async function handler(req, res) {
       }
     );
 
+    // Filter out future release dates
+    const today = new Date();
+    const validResults =
+      response.data.results?.filter((movie) => {
+        if (!movie.release_date) return true;
+        const release = new Date(movie.release_date);
+        return release <= today;
+      }) || [];
+
     // Return only necessary data to reduce payload
     const filteredResults =
-      response.data.results?.map((movie) => ({
+      validResults.map((movie) => ({
         id: movie.id,
         title: movie.title,
         release_date: movie.release_date,
         poster_path: movie.poster_path,
         popularity: movie.popularity,
         overview: movie.overview,
+        genre_ids: movie.genre_ids,
       })) || [];
 
     res.status(200).json({ results: filteredResults });
