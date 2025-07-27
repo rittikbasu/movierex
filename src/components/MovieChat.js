@@ -515,14 +515,25 @@ const MovieChat = () => {
     <div className="h-full flex flex-col">
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-4 pt-14 md:py-6 space-y-4 md:space-y-6">
-        {messages.map((message, index) => (
-          <div key={message.id} className="space-y-2">
-            <div className="text-[#6A6A6A] text-sm font-medium">
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`flex flex-col ${
+              message.type === "user" ? "items-end" : "items-start"
+            } space-y-2`}
+          >
+            <div
+              className={`text-[#6A6A6A] text-sm font-medium ${
+                message.type === "user" ? "text-right" : ""
+              }`}
+            >
               {message.type === "bot" ? "rex" : "you"}
             </div>
             <div
               className={`${
-                message.type === "user" ? "text-[#EFEFEF]" : "text-gray-300"
+                message.type === "user"
+                  ? "text-[#EFEFEF] text-right"
+                  : "text-gray-300"
               } text-base md:text-lg leading-relaxed`}
             >
               {message.text}
