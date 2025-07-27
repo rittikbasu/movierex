@@ -11,14 +11,13 @@ const geistSans = Geist({
 export default function Home() {
   return (
     <div
-      className={`${geistSans.variable} bg-black text-white font-sans overflow-hidden`}
-      style={{ height: "100dvh" }}
+      className={`${geistSans.variable} text-white font-sans overflow-hidden h-dvh`}
     >
-      <div className="h-full flex flex-col max-w-4xl mx-auto">
+      <div className="h-full flex flex-col max-w-lg mx-auto">
         {/* Header */}
-        <div className="px-4 md:px-6 pt-4 md:py-6 flex-shrink-0 relative z-30 bg-black">
+        <div className="px-4 md:px-6 pt-4 md:py-6 flex-shrink-0 relative z-30">
           <div className="flex flex-col items-center space-y-1">
-            <div className="flex items-center">
+            <div className="flex items-center -ml-2.5">
               <Image
                 src="/trex.png"
                 alt="movierex logo"
@@ -31,7 +30,7 @@ export default function Home() {
               </h1>
             </div>
             <p className="text-[#6A6A6A] text-sm md:text-base">
-              discover your next favorite film
+              discover your next favorite movie
             </p>
           </div>
         </div>
